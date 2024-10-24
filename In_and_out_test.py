@@ -10,6 +10,7 @@ def setTriac(output, relay, state):
 Pump_Low_I_time = int(30) # 30 Seconds
 Dry_Well_Time = int(900)  # 900 Seconds 15min
 Input_Read_time = int(1)  # 1 Second
+print_variables_time = int(5)  # 5 Seconds
 
 # Set the BAS inputs and outputs
 global Pressure_switch, Pump_I, Pump_Low_I, Dry_Well, Pump_Min_I, Well_Run
@@ -26,6 +27,7 @@ Well_Run = 0            # Initialize Well_Run
 
 async def update_sensor_values():
     while True:
+        global Pressure_switch, Pump_I 
         Pressure_switch = m.getContactCh(1,1)  # Read from BAS DI 1
         Pump_I = m.getUIn(1,2)            # Read from BAS AI 2
         await asyncio.sleep(Input_Read_time())
@@ -40,3 +42,11 @@ async def control_well_run():
             m.setTriac(1, 1, 0)  # Turn off Well_Run
         await asyncio.sleep(Input_Read_time)
         asyncio.create_task(control_well_run())
+
+async def print_variables():
+    while True:
+        print(f"Pressure_switch: {Pressure_switch}, Pump_I: {Pump_I}")
+        await asyncio.sleep(print_variables_time)
+        print("pressure switch:", Pressure_switch)
+        print("pump current:", Pump_I)
+        asyncio.create_task(print_variables())
