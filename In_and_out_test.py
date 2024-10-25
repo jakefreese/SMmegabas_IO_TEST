@@ -1,52 +1,92 @@
+### Current Implementation Analysis
+
+The current implementation in `In_and_out_test.py` involves the following:
+
+1. **Initialization**:
+   - The variables `Pressure_switch`, `Pump_I`, `Pump_Low_I`, `Dry_Well`, `Pump_Min_I`, and `Well_Run` are initialized globally.
+
+2. **Asynchronous Functions**:
+   - `update_sensor_values()`: Updates sensor values.
+   - `control_well_run()`: Controls the `Well_Run` based on `Pressure_switch` and `Dry_Well`.
+   - `print_variables()`: Prints the values of the variables periodically.
+
+3. **Task Creation Issue**:
+   - Tasks are being created inside the loop, which is redundant and incorrect.
+
+### Suggested Improvements
+
+To handle multiple permissives for the pump run, we can introduce additional checks in the `control_well_run` function and encapsulate the logic in a more modular way.
+
+Here is the improved code:
+
+```python
 import megabas as m
 import time
 import asyncio
 
-def setTriac(output, relay, state):
-    # Placeholder function to control the triac output
-    print(f"Setting Triac: output={output}, relay={relay}, state={state}")
+class WellSystem:
+    def __init__(self):
+        # Initialize variables
+        self.Pressure_switch = 0
+        self.Pump_I = 0
+        self.Pump_Low_I = 0
+        self.Dry_Well = 0
+        self.Pump_Min_I = 8
+        self.Well_Run = 0
 
-# timer durations
-Pump_Low_I_time = int(30) # 30 Seconds
-Dry_Well_Time = int(900)  # 900 Seconds 15min
-Input_Read_time = int(1)  # 1 Second
-print_variables_time = int(5)  # 5 Seconds
+        # Set the BAS inputs and outputs
+        self.Well_Run_output = m.setTriac(1, 1)
+        self.Dry_Well_Lamp = m.setTriac(1, 2)
+        self.Pressure_switch = m.getContactCh(1, 1)
+        self.Pump_I = m.getUIn(1, 2)
 
-# Set the BAS inputs and outputs
-global Pressure_switch, Pump_I, Pump_Low_I, Dry_Well, Pump_Min_I, Well_Run
-Well_Run_output = m.setTriac(1,1)            # BAS Traic 1
-Dry_Well_Lamp = m.setTriac(1,2)     # BAS Triac 2
-Pressure_switch = m.getContactCh(1,1)  # BAS DI 1
-Pump_I = m.getUIn(1,2)          # BAS AI 2 
+        # Timer durations
+        self.Input_Read_time = 1  # 1 Second
+        self.print_variables_time = 5  # 5 Seconds
 
-# Variables
-Pump_Low_I = 0          # Initialize Pump_Low_I
-Dry_Well = 0            # Initialize Dry_Well
-Pump_Min_I = 8          # Initialize Pump_Min_I 8 Amps minimum current
-Well_Run = 0            # Initialize Well_Run
+        # Permissives for pump run
+        self.permissives = {
+            "pressure_switch": lambda: self.Pressure_switch == 1,
+            "dry_well": lambda: self.Dry_Well == 0,
+            # Add more permissives as needed
+        }
 
-async def update_sensor_values():
-    while True:
-        global Pressure_switch, Pump_I 
-        Pressure_switch = m.getContactCh(1,1)  # Read from BAS DI 1
-        Pump_I = m.getUIn(1,2)            # Read from BAS AI 2
-        await asyncio.sleep(Input_Read_time())
-        # Start the sensor update task
-        asyncio.create_task(update_sensor_values())
+    async def update_sensor_values(self):
+        while True:
+            self.Pressure_switch = m.getContactCh(1, 1)  # Read from BAS DI 1
+            self.Pump_I = m.getUIn(1, 2)  # Read from BAS AI 2
+            await asyncio.sleep(self.Input_Read_time)
 
-async def control_well_run():
-    while True:
-        if Pressure_switch == 1 and Dry_Well == 0:
-            m.setTriac(1, 1, 1)  # Turn on Well_Run
-        else:
-            m.setTriac(1, 1, 0)  # Turn off Well_Run
-        await asyncio.sleep(Input_Read_time)
-        asyncio.create_task(control_well_run())
+    async def control_well_run(self):
+        while True:
+            if all(check() for check in self.permissives.values()):
+                m.setTriac(1, 1, 1)  # Turn on Well_Run
+            else:
+                m.setTriac(1, 1, 0)  # Turn off Well_Run
+            await asyncio.sleep(self.Input_Read_time)
 
-async def print_variables():
-    while True:
-        print(f"Pressure_switch: {Pressure_switch}, Pump_I: {Pump_I}")
-        await asyncio.sleep(print_variables_time)
-        print("pressure switch:", Pressure_switch)
-        print("pump current:", Pump_I)
-        asyncio.create_task(print_variables())
+    async def print_variables(self):
+        while True:
+            print(f"Pressure_switch: {self.Pressure_switch}, Pump_I: {self.Pump_I}")
+            await asyncio.sleep(self.print_variables_time)
+
+    async def run(self):
+        await asyncio.gather(
+            self.update_sensor_values(),
+            self.control_well_run(),
+            self.print_variables()
+        )
+
+if __name__ == "__main__":
+    well_system = WellSystem()
+    asyncio.run(well_system.run())
+```
+
+### Key Changes
+
+- Introduced a `WellSystem` class to encapsulate variables and methods.
+- Added a permissives dictionary to store and check pump run conditions.
+- Cleaned up task creation to ensure tasks are managed correctly.
+- Improved readability and maintainability of the code.
+
+This approach ensures that all pump run permissives are checked collectively, making it easier to add or modify permissive conditions in the future.
